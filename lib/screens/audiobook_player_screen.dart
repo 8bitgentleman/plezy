@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../constants/plex_constants.dart';
 import '../models/plex_metadata.dart';
 import '../providers/plex_client_provider.dart';
 import '../utils/provider_extensions.dart';
@@ -265,15 +266,29 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
 
         // Wait for media to be ready
         int attempts = 0;
-        while (player!.state.duration.inMilliseconds == 0 && attempts < 100) {
-          await Future.delayed(const Duration(milliseconds: 100));
+        while (player!.state.duration.inMilliseconds == 0 && attempts < PlexConstants.maxPlayerInitAttempts) {
+          await Future.delayed(PlexConstants.playerInitCheckInterval);
           attempts++;
+        }
+
+        // Warn if player didn't initialize properly
+        if (player!.state.duration.inMilliseconds == 0) {
+          appLogger.w('Player initialization timeout after ${PlexConstants.maxPlayerInitAttempts} attempts');
         }
 
         // Set up playback position if resuming
         if (_currentMetadata!.viewOffset != null && _currentMetadata!.viewOffset! > 0) {
           final resumePosition = Duration(milliseconds: _currentMetadata!.viewOffset!);
+          appLogger.d('Resuming from viewOffset: ${_currentMetadata!.viewOffset}ms (${resumePosition.inMinutes}m ${resumePosition.inSeconds % 60}s)');
+
+          // Wait a bit more for the player to be fully ready
+          await Future.delayed(PlexConstants.playerReadyDelay);
+
           await player!.seek(resumePosition);
+
+          // Verify the seek worked
+          await Future.delayed(PlexConstants.seekVerificationDelay);
+          appLogger.d('After seek, player position: ${player!.state.position.inMilliseconds}ms');
         }
 
         // Start playback
@@ -289,6 +304,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
         }
       }
     } catch (e) {
+      appLogger.e('Failed to start playback', error: e);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),
@@ -310,23 +326,33 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     _completedSubscription?.cancel();
     _rateSubscription?.cancel();
 
+    // Pause playback if currently playing and save progress
+    if (player?.state.playing ?? false) {
+      player?.pause();
+      // Give it a moment to pause before sending progress
+      Future.delayed(const Duration(milliseconds: 100), () {
+        _sendProgress('paused');
+      });
+      appLogger.i('Player screen closing - pausing playback and saving progress');
+    } else {
+      _sendProgress('stopped');
+    }
+
     // Stop media service and clear OS controls
     MediaServiceManager.instance.stop();
-
-    // Send final stopped state
-    _sendProgress('stopped');
 
     // Restore system UI
     OrientationHelper.restoreSystemUI();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
 
+    // Dispose player
     player?.dispose();
     super.dispose();
   }
 
   void _startProgressTracking() {
     // Send progress update every 10 seconds
-    _progressTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+    _progressTimer = Timer.periodic(PlexConstants.progressUpdateInterval, (timer) {
       if (player?.state.playing ?? false) {
         _sendProgress('playing');
       }
@@ -356,7 +382,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
             duration: duration,
           )
           .catchError((error) {
-            // Silently handle errors
+            appLogger.w('Failed to update progress', error: error);
           });
     }
   }
@@ -433,11 +459,26 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
 
   void _seekRelative(Duration offset) {
     if (player == null) return;
-    final newPosition = _position + offset;
+
+    // Get duration directly from player state (more reliable than cached value)
+    final currentDuration = player!.state.duration;
+
+    // Ensure we have valid duration
+    if (currentDuration.inMilliseconds <= 0) {
+      appLogger.w('Cannot seek: invalid duration (${currentDuration.inMilliseconds}ms)');
+      return;
+    }
+
+    // Get current position from player state (more reliable than cached _position)
+    final currentPosition = player!.state.position;
+    final newPosition = currentPosition + offset;
+
     // Clamp position manually since Duration doesn't have clamp method
     final clampedPosition = Duration(
-      milliseconds: newPosition.inMilliseconds.clamp(0, _duration.inMilliseconds),
+      milliseconds: newPosition.inMilliseconds.clamp(0, currentDuration.inMilliseconds),
     );
+
+    appLogger.d('Seeking relative: ${offset.inSeconds}s from ${currentPosition.inSeconds}s to ${clampedPosition.inSeconds}s (duration: ${currentDuration.inSeconds}s)');
     player!.seek(clampedPosition);
   }
 
@@ -447,7 +488,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     });
 
     _hideControlsTimer?.cancel();
-    _hideControlsTimer = Timer(const Duration(seconds: 5), () {
+    _hideControlsTimer = Timer(PlexConstants.controlsHideDelay, () {
       if (mounted && _isPlaying) {
         setState(() {
           _showControls = false;
@@ -660,6 +701,9 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
                     ),
                     child: Row(
                       children: [
+                        // Add padding on macOS to avoid window control buttons
+                        if (Theme.of(context).platform == TargetPlatform.macOS)
+                          const SizedBox(width: 70), // Space for macOS traffic lights
                         IconButton(
                           icon: const Icon(Icons.arrow_back, color: Colors.white),
                           onPressed: () => Navigator.of(context).pop(true),
@@ -733,6 +777,10 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
   }
 
   Widget _buildTimeline() {
+    // Use player state directly for most accurate values
+    final currentPosition = player?.state.position ?? Duration.zero;
+    final currentDuration = player?.state.duration ?? Duration.zero;
+
     return Column(
       children: [
         SliderTheme(
@@ -746,11 +794,11 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
             overlayColor: Colors.white.withValues(alpha: 0.2),
           ),
           child: Slider(
-            value: _duration.inMilliseconds > 0
-                ? _position.inMilliseconds.toDouble().clamp(0, _duration.inMilliseconds.toDouble())
+            value: currentDuration.inMilliseconds > 0
+                ? currentPosition.inMilliseconds.toDouble().clamp(0, currentDuration.inMilliseconds.toDouble())
                 : 0,
             min: 0,
-            max: _duration.inMilliseconds.toDouble(),
+            max: currentDuration.inMilliseconds > 0 ? currentDuration.inMilliseconds.toDouble() : 1.0,
             onChanged: (value) {
               player?.seek(Duration(milliseconds: value.toInt()));
             },
@@ -762,11 +810,11 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                _formatDuration(_position),
+                _formatDuration(currentPosition),
                 style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
               Text(
-                _formatDuration(_duration),
+                _formatDuration(currentDuration),
                 style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
             ],

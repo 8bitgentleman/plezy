@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dio/dio.dart';
 import '../client/plex_client.dart';
+import '../constants/plex_constants.dart';
 import '../models/plex_library.dart';
 import '../models/plex_metadata.dart';
 import '../models/plex_filter.dart';
@@ -20,7 +21,6 @@ import '../services/settings_service.dart';
 import '../mixins/refreshable.dart';
 import '../mixins/item_updatable.dart';
 import '../theme/theme_helper.dart';
-import 'audiobook_library_screen.dart';
 
 class LibrariesScreen extends StatefulWidget {
   const LibrariesScreen({super.key});
@@ -304,7 +304,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       if (selectedLibrary.isAudiobookLibrary) {
         if (!_showArtistView) {
           // Type 9 = albums (books) in Plex
-          filtersWithSort['type'] = '9';
+          filtersWithSort['type'] = PlexConstants.plexTypeAlbum.toString();
         }
         // If _showArtistView is true, don't add type filter (defaults to artists)
       }

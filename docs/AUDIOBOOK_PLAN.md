@@ -1,6 +1,6 @@
 # Audiobook Implementation Plan
 
-**Status:** ✅ COMPLETE - All Core Features Implemented | Phase 4-7 Future Enhancements
+**Status:** ✅ COMPLETE - All Core Features Implemented | Phase 4-8 Future Enhancements
 
 ---
 
@@ -177,25 +177,159 @@ All phases 1-3 have been successfully completed with additional UX improvements:
 
 ---
 
+## 🚧 Phase 8: Persistent Background Playback (FUTURE - MAJOR REFACTOR)
+
+**Goal:** Enable true background playback - audio continues when navigating away from player
+
+**Current Limitation:** Both video and audiobook players dispose when you leave the screen. This is consistent across Plezy, but not ideal for audiobooks where users expect background listening.
+
+### Architecture Changes Required
+
+- [ ] **Create Global Player Service**
+  - Move `Player` instance from screen widget to singleton service
+  - Create `AudiobookPlayerService` provider/manager
+  - Handle player lifecycle independently of UI
+  - Manage when to dispose player (app close, explicit stop)
+
+- [ ] **Persistent Mini-Player UI**
+  - Create bottom sheet mini-player (similar to Spotify)
+  - Show current playback across all screens
+  - Add play/pause, chapter info, progress bar
+  - Tap to expand to full player screen
+  - Swipe to dismiss (stops playback)
+
+- [ ] **Player State Management**
+  - Create `AudiobookPlaybackProvider` for global state
+  - Track: current book, chapter, position, playlist
+  - Persist state across navigation
+  - Handle multiple screens accessing same player
+
+- [ ] **Screen Coordination**
+  - Update AudiobookPlayerScreen to read from global service
+  - Handle player already playing when screen opens
+  - Prevent multiple player instances
+  - Sync UI state with service state
+
+- [ ] **Progress Tracking**
+  - Move progress updates to service (not screen)
+  - Continue tracking when navigating away
+  - Handle app backgrounding properly
+
+- [ ] **Video Player Integration**
+  - Stop audiobook when video starts (or vice versa)
+  - Share MediaServiceManager between both
+  - Handle conflicts gracefully
+
+- [ ] **Notification Controls**
+  - Keep MediaServiceManager active with player
+  - Update notification when navigating screens
+  - Handle notification dismiss = stop playback
+
+### Files to Modify
+
+**New Files:**
+- `lib/services/audiobook_player_service.dart` - Global player singleton
+- `lib/providers/audiobook_playback_provider.dart` - Riverpod state
+- `lib/widgets/mini_player.dart` - Bottom sheet mini-player UI
+- `lib/widgets/mini_player_bar.dart` - Persistent bar across screens
+
+**Modified Files:**
+- `lib/screens/audiobook_player_screen.dart` - Connect to service
+- `lib/screens/audiobook_detail_screen.dart` - Use global service
+- `lib/main.dart` - Initialize player service
+- `lib/services/media_service_manager.dart` - Handle shared state
+- `lib/screens/video_player_screen.dart` - Handle conflicts
+
+### Challenges to Address
+
+1. **Memory Management**
+   - When to actually dispose player?
+   - Handle app backgrounding/foregrounding
+   - Clean up on app close
+
+2. **State Synchronization**
+   - Keep UI in sync with player state
+   - Handle player changes from multiple sources
+   - Manage race conditions
+
+3. **Navigation Complexity**
+   - Show mini-player on which screens?
+   - Handle deep links to player
+   - Manage back stack correctly
+
+4. **Cross-Platform Differences**
+   - iOS backgrounding restrictions
+   - Android battery optimization
+   - Desktop always-on considerations
+
+5. **Conflict Resolution**
+   - What happens if video starts during audiobook?
+   - Handle system audio interruptions
+   - Manage audio focus properly
+
+6. **User Expectations**
+   - Where to add stop/close button?
+   - How to clear player when done?
+   - Handle "what's playing" confusion
+
+### Estimated Effort
+
+**Time:** 2-3 weeks full-time
+- Week 1: Service architecture and state management
+- Week 2: Mini-player UI and screen integration
+- Week 3: Polish, testing, edge cases
+
+**Complexity:** ⚠️ HIGH - Major architectural change
+
+**Risk:** ⚠️ HIGH - Affects core app functionality
+
+### Why This Is Optional
+
+This is marked as optional because:
+1. **Scope:** Massive refactor affecting video player too
+2. **Risk:** Could introduce bugs in stable features
+3. **Consistency:** Current behavior matches video player
+4. **Complexity:** Requires significant testing and edge case handling
+5. **Priority:** Nice-to-have vs must-have feature
+
+### Alternative Approach (Lower Risk)
+
+Instead of full refactor, consider:
+- Keep current behavior (pause on exit)
+- Add "Resume Listening" quick action on home screen
+- Optimize resume time (faster to get back to playing)
+- Focus on offline downloads (Phase 4) instead
+
+**Recommendation:** Implement Phases 4-7 first, then re-evaluate if this refactor is needed based on user feedback.
+
+---
+
 ## Current Limitations
 
 ### Known Issues to Address
 
-1. **Discovery Feeds**
+1. **Background Playback**
+   - Audio pauses when navigating away from player screen
+   - Reason: Player instance tied to screen lifecycle (same as video player)
+   - Workaround: Progress is saved, resumes from same position when reopened
+   - Solution: Implement global player service (Phase 8)
+   - **Note:** This is intentional design matching video player behavior
+
+2. **Discovery Feeds**
    - Audiobooks don't appear in Recently Added or On Deck
    - Reason: Can't distinguish from music without library context
    - Solution: Implement library-aware filtering (Phase 6)
 
-2. **Per-Book Settings**
+3. **Per-Book Settings**
    - Playback speed is global, not per-book
    - Solution: Store speed preferences keyed by albumRatingKey (Phase 5)
 
-3. **Advanced Audio**
+4. **Advanced Audio**
    - No silence skipping (requires MPV configuration)
    - No volume boost/EQ UI (MPV supports, needs UI)
    - Solution: Add in Phase 5
 
-4. **Offline Support**
+5. **Offline Support**
    - No downloads or offline listening
    - Solution: Implement in Phase 4
 
@@ -274,7 +408,12 @@ If continuing this work in a new Claude session:
 **Suggested Next Steps:**
 1. Test the implementation with a real Plex server
 2. Fix any bugs found during testing
-3. Choose a Phase 4-7 feature to implement
+3. Choose a Phase 4-8 feature to implement
+   - Phase 4: Offline downloads (medium complexity)
+   - Phase 5: Advanced audio features (medium complexity)
+   - Phase 6: Discovery & organization (medium complexity)
+   - Phase 7: Social & insights (low priority)
+   - Phase 8: Background playback (⚠️ high complexity, major refactor)
 4. Or: Add widget/integration tests
 
 ---

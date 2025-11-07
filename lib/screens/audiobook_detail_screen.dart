@@ -711,7 +711,17 @@ class _AudiobookDetailScreenState extends State<AudiobookDetailScreen>
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            if (chapter.duration != null)
+                            if (hasProgress && !chapter.isWatched) ...[
+                              // Show progress time when chapter has progress
+                              Text(
+                                '${_formatDuration(chapter.viewOffset!)} / ${_formatDuration(chapter.duration!)}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: Theme.of(context).colorScheme.primary),
+                              ),
+                            ] else if (chapter.duration != null) ...[
+                              // Show total duration for unstarted chapters
                               Text(
                                 _formatDuration(chapter.duration!),
                                 style: Theme.of(context)
@@ -719,6 +729,7 @@ class _AudiobookDetailScreenState extends State<AudiobookDetailScreen>
                                     .bodySmall
                                     ?.copyWith(color: tokens(context).textMuted),
                               ),
+                            ],
                             if (chapter.duration != null && chapter.isWatched) ...[
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 6),
