@@ -46,6 +46,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
   PlexSort? _selectedSort;
   bool _isSortDescending = false;
   bool _isInitialLoad = true;
+  bool _showArtistView = false;  // false = albums (books), true = artists (authors)
 
   // Pagination state
   int _currentPage = 0;
@@ -252,6 +253,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       // Only clear filters when explicitly changing library (not on initial load)
       if (isChangingLibrary) {
         _selectedFilters.clear();
+        _showArtistView = false;  // Reset to album view when changing libraries
       }
     });
 
@@ -292,6 +294,19 @@ class _LibrariesScreenState extends State<LibrariesScreen>
         filtersWithSort['sort'] = _selectedSort!.getSortKey(
           descending: _isSortDescending,
         );
+      }
+
+      // For audiobook libraries, explicitly request albums (books) or artists (authors)
+      final selectedLibrary = _allLibraries.firstWhere(
+        (lib) => lib.key == libraryKey,
+        orElse: () => _allLibraries.first,
+      );
+      if (selectedLibrary.isAudiobookLibrary) {
+        if (!_showArtistView) {
+          // Type 9 = albums (books) in Plex
+          filtersWithSort['type'] = '9';
+        }
+        // If _showArtistView is true, don't add type filter (defaults to artists)
       }
 
       // Load pages sequentially
@@ -872,6 +887,30 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                   ),
                   onPressed: _showLibraryManagementSheet,
                 ),
+              // View toggle button for audiobook libraries (albums vs artists)
+              if (_selectedLibraryKey != null && _allLibraries.isNotEmpty)
+                () {
+                  final selectedLibrary = _allLibraries.firstWhere(
+                    (lib) => lib.key == _selectedLibraryKey,
+                    orElse: () => _allLibraries.first,
+                  );
+                  if (selectedLibrary.isAudiobookLibrary) {
+                    return IconButton(
+                      icon: Icon(
+                        _showArtistView ? Icons.library_books : Icons.person,
+                        semanticLabel: _showArtistView ? 'Show Books' : 'Show Authors',
+                      ),
+                      tooltip: _showArtistView ? 'Show Books' : 'Show Authors',
+                      onPressed: () {
+                        setState(() {
+                          _showArtistView = !_showArtistView;
+                        });
+                        _loadLibraryContent(_selectedLibraryKey!);
+                      },
+                    );
+                  }
+                  return const SizedBox.shrink();
+                }(),
               if (_sortOptions.isNotEmpty)
                 IconButton(
                   icon: const Icon(Icons.swap_vert, semanticLabel: 'Sort'),
@@ -960,19 +999,8 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                           onMenuItemSelected: (value) =>
                               _handleLibraryMenuAction(value, library),
                           onTap: () {
-                            // Navigate to dedicated audiobook screen for audiobook libraries
-                            if (library.isAudiobookLibrary) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      AudiobookLibraryScreen(library: library),
-                                ),
-                              );
-                            } else {
-                              // Regular library - load in-place
-                              _loadLibraryContent(library.key);
-                            }
+                            // Load all library types in-place (including audiobooks)
+                            _loadLibraryContent(library.key);
                           },
                           child: ChoiceChip(
                             label: Row(
@@ -990,19 +1018,8 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                             selected: isSelected,
                             onSelected: (selected) {
                               if (selected) {
-                                // Navigate to dedicated audiobook screen for audiobook libraries
-                                if (library.isAudiobookLibrary) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          AudiobookLibraryScreen(library: library),
-                                    ),
-                                  );
-                                } else {
-                                  // Regular library - load in-place
-                                  _loadLibraryContent(library.key);
-                                }
+                                // Load all library types in-place (including audiobooks)
+                                _loadLibraryContent(library.key);
                               }
                             },
                             backgroundColor: t.surface,
@@ -1091,7 +1108,7 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                             context,
                             settingsProvider.libraryDensity,
                           ),
-                          childAspectRatio: 2 / 3.3,
+                          childAspectRatio: _getAspectRatio(),
                           crossAxisSpacing: 0,
                           mainAxisSpacing: 0,
                         ),
@@ -1181,6 +1198,26 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       };
       return availableWidth / targetItemCount;
     }
+  }
+
+  /// Get aspect ratio based on library type
+  /// Audiobooks use 1:1 (square) for album covers
+  /// Movies/TV use 2:3.3 (portrait) for posters
+  double _getAspectRatio() {
+    if (_selectedLibraryKey == null) return 2 / 3.3;
+
+    final selectedLibrary = _allLibraries.firstWhere(
+      (lib) => lib.key == _selectedLibraryKey,
+      orElse: () => _allLibraries.first,
+    );
+
+    // Use square aspect ratio (1:1) for audiobook covers
+    if (selectedLibrary.isAudiobookLibrary) {
+      return 1.0;
+    }
+
+    // Use portrait aspect ratio (2:3.3) for movie/TV posters
+    return 2 / 3.3;
   }
 }
 

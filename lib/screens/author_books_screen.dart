@@ -103,6 +103,29 @@ class _AuthorBooksScreenState extends State<AuthorBooksScreen>
             pinned: true,
             onBackPressed: () => Navigator.pop(context, _watchStateChanged),
           ),
+          // Artist bio/summary section
+          if (widget.author.summary != null && widget.author.summary!.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'About',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.author.summary!,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_isLoadingBooks)
             const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator()),
@@ -146,7 +169,7 @@ class _AuthorBooksScreenState extends State<AuthorBooksScreen>
                           context,
                           settingsProvider.libraryDensity,
                         ),
-                        childAspectRatio: 2 / 3.3,
+                        childAspectRatio: 1.0,  // Square aspect ratio for audiobook covers
                         crossAxisSpacing: 0,
                         mainAxisSpacing: 0,
                       ),
