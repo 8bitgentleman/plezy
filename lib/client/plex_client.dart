@@ -361,7 +361,13 @@ class PlexClient {
     );
     final allItems = _extractMetadataList(response);
 
-    // Filter out music content (artists, albums, tracks)
+    // Filter out music content (artist, album, track)
+    // TODO: Audiobook support - Currently audiobooks are also filtered here
+    // since they use the same type hierarchy as music (artist=author, album=book,
+    // track=chapter) and we can't reliably distinguish them from music without
+    // library context (agent metadata). Audiobooks remain accessible through their
+    // library screens. Future: Implement library-aware filtering or audiobook-specific
+    // discovery endpoints.
     return allItems.where((item) {
       final type = item.type.toLowerCase();
       return type != 'artist' && type != 'album' && type != 'track';
@@ -377,7 +383,13 @@ class PlexClient {
           .map((json) => PlexMetadata.fromJsonWithImages(json))
           .toList();
 
-      // Filter out music content (artists, albums, tracks)
+      // Filter out music content (artist, album, track)
+      // TODO: Audiobook support - Currently audiobooks are also filtered here
+      // since they use the same type hierarchy as music (artist=author, album=book,
+      // track=chapter) and we can't reliably distinguish them from music without
+      // library context (agent metadata). Audiobooks remain accessible through their
+      // library screens. Future: Implement library-aware filtering or audiobook-specific
+      // discovery endpoints.
       return allItems.where((item) {
         final type = item.type.toLowerCase();
         return type != 'artist' && type != 'album' && type != 'track';
@@ -934,6 +946,10 @@ class PlexClient {
           try {
             final hub = PlexHub.fromJson(hubJson);
             // Only include hubs that have items and are movie/show content
+            // TODO: Audiobook support - Currently only movie/show types are included.
+            // Audiobooks use music types (artist=author, album=book, track=chapter) and
+            // can't be reliably distinguished from music at the item level without library
+            // context. Future: Include audiobook types with library-aware filtering.
             if (hub.items.isNotEmpty) {
               // Filter out non-video content types
               final videoItems = hub.items.where((item) {
@@ -975,6 +991,10 @@ class PlexClient {
       final allItems = _extractMetadataList(response);
 
       // Filter out non-video content types
+      // TODO: Audiobook support - Currently only movie/show types are included.
+      // Audiobooks use music types (artist=author, album=book, track=chapter) and
+      // can't be reliably distinguished from music at the item level without library
+      // context. Future: Include audiobook types with library-aware filtering.
       return allItems.where((item) {
         final type = item.type.toLowerCase();
         return type == 'movie' || type == 'show';

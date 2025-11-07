@@ -20,6 +20,7 @@ import '../services/settings_service.dart';
 import '../mixins/refreshable.dart';
 import '../mixins/item_updatable.dart';
 import '../theme/theme_helper.dart';
+import 'audiobook_library_screen.dart';
 
 class LibrariesScreen extends StatefulWidget {
   const LibrariesScreen({super.key});
@@ -105,11 +106,16 @@ class _LibrariesScreenState extends State<LibrariesScreen>
       final storage = await StorageService.getInstance();
       final allLibraries = await client.getLibraries();
 
-      // Filter out music libraries (type: 'artist') since music playback is not yet supported
-      // Only show movie and TV show libraries
-      final filteredLibraries = allLibraries
-          .where((lib) => lib.type.toLowerCase() != 'artist')
-          .toList();
+      // Filter out music libraries but keep audiobook libraries
+      // Audiobooks are detected by their metadata agent (audnexus, audiobooks, etc.)
+      final filteredLibraries = allLibraries.where((lib) {
+        final type = lib.type.toLowerCase();
+        // Exclude regular music (artist type), but include audiobooks
+        if (type == 'artist') {
+          return lib.isAudiobookLibrary;  // Only keep if audiobook
+        }
+        return true;  // Keep all other library types (movie, show, photo)
+      }).toList();
 
       // Load saved library order and apply it
       final savedOrder = storage.getLibraryOrder();
@@ -953,13 +959,27 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                           menuItems: _getLibraryMenuItems(library),
                           onMenuItemSelected: (value) =>
                               _handleLibraryMenuAction(value, library),
-                          onTap: () => _loadLibraryContent(library.key),
+                          onTap: () {
+                            // Navigate to dedicated audiobook screen for audiobook libraries
+                            if (library.isAudiobookLibrary) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      AudiobookLibraryScreen(library: library),
+                                ),
+                              );
+                            } else {
+                              // Regular library - load in-place
+                              _loadLibraryContent(library.key);
+                            }
+                          },
                           child: ChoiceChip(
                             label: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  _getLibraryIcon(library.type),
+                                  library.libraryIcon,
                                   size: 16,
                                   color: isSelected ? t.bg : t.text,
                                 ),
@@ -970,7 +990,19 @@ class _LibrariesScreenState extends State<LibrariesScreen>
                             selected: isSelected,
                             onSelected: (selected) {
                               if (selected) {
-                                _loadLibraryContent(library.key);
+                                // Navigate to dedicated audiobook screen for audiobook libraries
+                                if (library.isAudiobookLibrary) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          AudiobookLibraryScreen(library: library),
+                                    ),
+                                  );
+                                } else {
+                                  // Regular library - load in-place
+                                  _loadLibraryContent(library.key);
+                                }
                               }
                             },
                             backgroundColor: t.surface,
@@ -1101,18 +1133,9 @@ class _LibrariesScreenState extends State<LibrariesScreen>
   }
 
   IconData _getLibraryIcon(String type) {
-    switch (type.toLowerCase()) {
-      case 'movie':
-        return Icons.movie;
-      case 'show':
-        return Icons.tv;
-      case 'artist':
-        return Icons.music_note;
-      case 'photo':
-        return Icons.photo;
-      default:
-        return Icons.folder;
-    }
+    // Icon selection is now handled by PlexLibrary.libraryIcon getter
+    // which properly detects audiobooks and returns Icons.headphones
+    return Icons.folder;  // This is just a fallback, not actually used
   }
 
   double _getMaxCrossAxisExtent(BuildContext context, LibraryDensity density) {
@@ -1736,18 +1759,9 @@ class _LibraryManagementSheetState extends State<_LibraryManagementSheet> {
   }
 
   IconData _getLibraryIcon(String type) {
-    switch (type.toLowerCase()) {
-      case 'movie':
-        return Icons.movie;
-      case 'show':
-        return Icons.tv;
-      case 'artist':
-        return Icons.music_note;
-      case 'photo':
-        return Icons.photo;
-      default:
-        return Icons.folder;
-    }
+    // Icon selection is now handled by PlexLibrary.libraryIcon getter
+    // which properly detects audiobooks and returns Icons.headphones
+    return Icons.folder;  // This is just a fallback, not actually used
   }
 
   @override
@@ -1827,7 +1841,7 @@ class _LibraryManagementSheetState extends State<_LibraryManagementSheet> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Icon(_getLibraryIcon(library.type)),
+                          Icon(library.libraryIcon),
                         ],
                       ),
                       title: Text(library.title),

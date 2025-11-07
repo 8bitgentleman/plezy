@@ -7,9 +7,12 @@ import '../providers/settings_provider.dart';
 import '../services/settings_service.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/video_player_navigation.dart';
+import '../utils/audiobook_player_navigation.dart';
 import '../utils/content_rating_formatter.dart';
 import '../screens/media_detail_screen.dart';
 import '../screens/season_detail_screen.dart';
+import '../screens/audiobook_detail_screen.dart';
+import '../screens/author_books_screen.dart';
 import '../theme/theme_helper.dart';
 import 'media_context_menu.dart';
 
@@ -40,15 +43,65 @@ class _MediaCardState extends State<MediaCard> {
 
     final itemType = widget.item.type.toLowerCase();
 
-    // Music content is not yet supported
+    // Handle audiobook/music types
+    // For audiobooks, the Plex type mapping is:
+    // - type: "artist" = Author (shows list of books by author)
+    // - type: "album" = Book (shows book detail with chapters)
+    // - type: "track" = Chapter (plays audio)
     if (itemType == 'artist' || itemType == 'album' || itemType == 'track') {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Music playback is not yet supported'),
-            duration: Duration(seconds: 2),
+      if (itemType == 'artist') {
+        // Author - show their books
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AuthorBooksScreen(author: widget.item),
           ),
         );
+        widget.onRefresh?.call(widget.item.ratingKey);
+      } else if (itemType == 'album') {
+        // Book - show detail screen with chapters
+        final result = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AudiobookDetailScreen(book: widget.item),
+          ),
+        );
+        if (result == true) {
+          widget.onRefresh?.call(widget.item.ratingKey);
+        }
+      } else if (itemType == 'track') {
+        // Chapter - play directly
+        // Try to get all chapters for the parent book to enable sequential playback
+        List<PlexMetadata>? playlist;
+        int initialIndex = 0;
+
+        try {
+          if (widget.item.parentRatingKey != null) {
+            final chapters = await client.getChildren(widget.item.parentRatingKey!);
+            if (chapters.isNotEmpty) {
+              playlist = chapters;
+              // Find the index of the current track
+              initialIndex = chapters.indexWhere(
+                (c) => c.ratingKey == widget.item.ratingKey,
+              );
+              if (initialIndex < 0) initialIndex = 0;
+            }
+          }
+        } catch (e) {
+          // If we can't load the playlist, just play the single track
+        }
+
+        if (context.mounted) {
+          final result = await navigateToAudiobookPlayer(
+            context,
+            metadata: widget.item,
+            playlist: playlist,
+            initialIndex: initialIndex,
+          );
+          if (result == true) {
+            widget.onRefresh?.call(widget.item.ratingKey);
+          }
+        }
       }
       return;
     }
