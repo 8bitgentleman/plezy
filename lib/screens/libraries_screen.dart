@@ -1149,12 +1149,6 @@ class _LibrariesScreenState extends State<LibrariesScreen>
     );
   }
 
-  IconData _getLibraryIcon(String type) {
-    // Icon selection is now handled by PlexLibrary.libraryIcon getter
-    // which properly detects audiobooks and returns Icons.headphones
-    return Icons.folder;  // This is just a fallback, not actually used
-  }
-
   double _getMaxCrossAxisExtent(BuildContext context, LibraryDensity density) {
     final screenWidth = MediaQuery.of(context).size.width;
     final padding = 16.0; // 8px left + 8px right
@@ -1793,12 +1787,6 @@ class _LibraryManagementSheetState extends State<_LibraryManagementSheet> {
 
       widget.onLibraryMenuAction(selected, library);
     }
-  }
-
-  IconData _getLibraryIcon(String type) {
-    // Icon selection is now handled by PlexLibrary.libraryIcon getter
-    // which properly detects audiobooks and returns Icons.headphones
-    return Icons.folder;  // This is just a fallback, not actually used
   }
 
   @override

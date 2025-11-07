@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/plex_metadata.dart';
 import '../client/plex_client.dart';
-import '../providers/plex_client_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/settings_service.dart';
 import '../utils/provider_extensions.dart';

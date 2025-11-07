@@ -2,9 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:provider/provider.dart';
 import 'package:audio_session/audio_session.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../constants/plex_constants.dart';
 import '../models/plex_metadata.dart';
 import '../providers/plex_client_provider.dart';
@@ -12,10 +10,11 @@ import '../utils/provider_extensions.dart';
 import '../utils/app_logger.dart';
 import '../services/settings_service.dart';
 import '../services/media_service_manager.dart';
-import '../services/sleep_timer_service.dart';
 import '../utils/orientation_helper.dart';
+import '../widgets/audiobook/audiobook_album_art.dart';
+import '../widgets/audiobook/audiobook_playback_controls.dart';
+import '../widgets/audiobook/audiobook_additional_controls.dart';
 import '../widgets/video_controls/sheets/playback_speed_sheet.dart';
-import '../widgets/video_controls/sheets/chapter_sheet.dart';
 import '../widgets/video_controls/sheets/sleep_timer_sheet.dart';
 
 class AudiobookPlayerScreen extends StatefulWidget {
@@ -55,8 +54,6 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
   StreamSubscription<double>? _rateSubscription;
 
   // Current playback values
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
   bool _isPlaying = false;
   double _playbackSpeed = 1.0;
 
@@ -128,19 +125,11 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
 
       // Listen to playback state changes
       _positionSubscription = player!.stream.position.listen((position) {
-        if (mounted) {
-          setState(() {
-            _position = position;
-          });
-        }
+        // Position updates handled directly from player state
       });
 
       _durationSubscription = player!.stream.duration.listen((duration) {
-        if (mounted) {
-          setState(() {
-            _duration = duration;
-          });
-        }
+        // Duration updates handled directly from player state
       });
 
       _playingSubscription = player!.stream.playing.listen((isPlaying) {
@@ -580,9 +569,9 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     final seconds = duration.inSeconds.remainder(60);
 
     if (hours > 0) {
-      return '${hours}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
     } else {
-      return '${minutes}:${seconds.toString().padLeft(2, '0')}';
+      return '$minutes:${seconds.toString().padLeft(2, '0')}';
     }
   }
 
@@ -623,7 +612,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
                         const SizedBox(height: 60), // Space for app bar
 
                         // Album art
-                        _buildAlbumArt(),
+                        AudiobookAlbumArt(metadata: _currentMetadata!),
                         const SizedBox(height: 40),
 
                         // Book title
@@ -670,11 +659,24 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
                         const SizedBox(height: 32),
 
                         // Playback controls
-                        _buildPlaybackControls(),
+                        AudiobookPlaybackControls(
+                          isPlaying: _isPlaying,
+                          hasPreviousTrack: _hasPreviousTrack,
+                          hasNextTrack: _hasNextTrack,
+                          onPlayPause: _togglePlayPause,
+                          onPrevious: _playPrevious,
+                          onNext: _playNext,
+                          onSeekRelative: _seekRelative,
+                        ),
                         const SizedBox(height: 32),
 
                         // Additional controls
-                        _buildAdditionalControls(),
+                        AudiobookAdditionalControls(
+                          playbackSpeed: _playbackSpeed,
+                          onSpeedPressed: _showPlaybackSpeedSheet,
+                          onSleepTimerPressed: _showSleepTimerSheet,
+                          onChaptersPressed: _showChaptersSheet,
+                        ),
                       ],
                     ),
                   ),
@@ -718,62 +720,6 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
         ),
       ),
     );
-  }
-
-  Widget _buildAlbumArt() {
-    final clientProvider = context.watch<PlexClientProvider>();
-    final client = clientProvider.client;
-
-    // Use parent thumb (book cover) if available, otherwise use track thumb
-    final thumbUrl = _currentMetadata!.parentThumb ?? _currentMetadata!.thumb;
-
-    if (thumbUrl != null && client != null) {
-      return Container(
-        width: 300,
-        height: 300,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 30,
-              spreadRadius: 5,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: CachedNetworkImage(
-            imageUrl: client.getThumbnailUrl(thumbUrl),
-            fit: BoxFit.cover,
-            placeholder: (context, url) => Container(
-              color: Colors.grey[900],
-              child: const Center(
-                child: Icon(Icons.headphones, size: 100, color: Colors.white30),
-              ),
-            ),
-            errorWidget: (context, url, error) => Container(
-              color: Colors.grey[900],
-              child: const Center(
-                child: Icon(Icons.headphones, size: 100, color: Colors.white30),
-              ),
-            ),
-          ),
-        ),
-      );
-    } else {
-      return Container(
-        width: 300,
-        height: 300,
-        decoration: BoxDecoration(
-          color: Colors.grey[900],
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Center(
-          child: Icon(Icons.headphones, size: 100, color: Colors.white30),
-        ),
-      );
-    }
   }
 
   Widget _buildTimeline() {
@@ -824,114 +770,4 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     );
   }
 
-  Widget _buildPlaybackControls() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Previous track
-        IconButton(
-          icon: const Icon(Icons.skip_previous),
-          iconSize: 48,
-          color: _hasPreviousTrack ? Colors.white : Colors.white30,
-          onPressed: _hasPreviousTrack ? _playPrevious : null,
-        ),
-        const SizedBox(width: 16),
-
-        // Rewind 30s
-        IconButton(
-          icon: const Icon(Icons.replay_30),
-          iconSize: 48,
-          color: Colors.white,
-          onPressed: () => _seekRelative(const Duration(seconds: -30)),
-        ),
-        const SizedBox(width: 24),
-
-        // Play/Pause
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: IconButton(
-            icon: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
-            iconSize: 56,
-            color: Colors.black,
-            onPressed: _togglePlayPause,
-          ),
-        ),
-        const SizedBox(width: 24),
-
-        // Forward 30s
-        IconButton(
-          icon: const Icon(Icons.forward_30),
-          iconSize: 48,
-          color: Colors.white,
-          onPressed: () => _seekRelative(const Duration(seconds: 30)),
-        ),
-        const SizedBox(width: 16),
-
-        // Next track
-        IconButton(
-          icon: const Icon(Icons.skip_next),
-          iconSize: 48,
-          color: _hasNextTrack ? Colors.white : Colors.white30,
-          onPressed: _hasNextTrack ? _playNext : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAdditionalControls() {
-    final sleepTimer = SleepTimerService();
-    final isSleepTimerActive = sleepTimer.isActive;
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        // Playback speed
-        _buildControlButton(
-          label: '${_playbackSpeed}x',
-          onPressed: _showPlaybackSpeedSheet,
-        ),
-
-        // Sleep timer
-        _buildControlButton(
-          icon: isSleepTimerActive ? Icons.bedtime : Icons.bedtime_outlined,
-          label: isSleepTimerActive ? 'Active' : 'Sleep',
-          onPressed: _showSleepTimerSheet,
-        ),
-
-        // Chapters
-        _buildControlButton(
-          icon: Icons.list,
-          label: 'Chapters',
-          onPressed: _showChaptersSheet,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildControlButton({
-    IconData? icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 20),
-            const SizedBox(width: 8),
-          ],
-          Text(label),
-        ],
-      ),
-    );
-  }
 }
