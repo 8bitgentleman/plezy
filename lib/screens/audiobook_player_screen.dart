@@ -2,14 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:audio_session/audio_session.dart';
+import 'package:os_media_controls/os_media_controls.dart';
 import '../constants/plex_constants.dart';
 import '../models/plex_metadata.dart';
 import '../providers/plex_client_provider.dart';
 import '../utils/provider_extensions.dart';
 import '../utils/app_logger.dart';
 import '../services/settings_service.dart';
-import '../services/media_service_manager.dart';
 import '../utils/orientation_helper.dart';
 import '../widgets/audiobook/audiobook_album_art.dart';
 import '../widgets/audiobook/audiobook_playback_controls.dart';
@@ -52,6 +51,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
   StreamSubscription<bool>? _playingSubscription;
   StreamSubscription<bool>? _completedSubscription;
   StreamSubscription<double>? _rateSubscription;
+  StreamSubscription<dynamic>? _mediaControlSubscription;
 
   // Current playback values
   bool _isPlaying = false;
@@ -107,12 +107,6 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
         ),
       );
 
-      // Initialize audio session for audiobook playback
-      await _initializeAudioSession();
-
-      // Update media service manager with new player
-      await _updateMediaService();
-
       // Notify that player is ready
       if (mounted) {
         setState(() {
@@ -124,8 +118,8 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
       await _startPlayback();
 
       // Listen to playback state changes
-      _positionSubscription = player!.stream.position.listen((position) {
-        // Position updates handled directly from player state
+      _positionSubscription = player!.stream.position.listen((_) {
+        _updateMediaControlsPosition();
       });
 
       _durationSubscription = player!.stream.duration.listen((duration) {
@@ -139,6 +133,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
           });
         }
         _onPlayingStateChanged(isPlaying);
+        _updateMediaControlsPlaybackState();
       });
 
       _completedSubscription = player!.stream.completed.listen((completed) {
@@ -155,6 +150,9 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
         }
       });
 
+      // Initialize OS media controls
+      _initializeMediaControls();
+
       // Start periodic progress updates
       _startProgressTracking();
     } catch (e) {
@@ -167,70 +165,103 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     }
   }
 
-  Future<void> _initializeAudioSession() async {
-    try {
-      final session = await AudioSession.instance;
-      await session.configure(const AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        avAudioSessionMode: AVAudioSessionMode.spokenAudio, // Optimized for audiobooks
-        androidAudioAttributes: AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.speech, // Optimized for voice
-          usage: AndroidAudioUsage.media,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-      ));
-
-      // Handle interruptions (phone calls, other apps, etc.)
-      session.interruptionEventStream.listen((event) {
-        if (event.begin) {
-          player?.pause();
-          appLogger.i('Playback paused due to interruption');
-        }
-      });
-
-      // Handle audio becoming noisy (headphones unplugged)
-      session.becomingNoisyEventStream.listen((_) {
+  void _initializeMediaControls() async {
+    // Listen to media control events
+    _mediaControlSubscription = OsMediaControls.controlEvents.listen((event) {
+      if (event is PlayEvent) {
+        player?.play();
+      } else if (event is PauseEvent) {
         player?.pause();
-        appLogger.i('Playback paused due to audio becoming noisy (headphones unplugged?)');
-      });
-    } catch (e) {
-      appLogger.w('Failed to configure audio session', error: e);
-    }
+      } else if (event is SeekEvent) {
+        player?.seek(event.position);
+      } else if (event is NextTrackEvent) {
+        if (_hasNextTrack) {
+          _playNext();
+        }
+      } else if (event is PreviousTrackEvent) {
+        if (_hasPreviousTrack) {
+          _playPrevious();
+        }
+      }
+    });
+
+    // Enable next/previous track controls for audiobooks (chapter navigation)
+    await OsMediaControls.enableControls([
+      MediaControl.next,
+      MediaControl.previous,
+    ]);
+
+    // Set initial metadata
+    await _updateMediaMetadata();
   }
 
-  Future<void> _updateMediaService() async {
-    if (!mounted) return;
+  Future<void> _updateMediaMetadata() async {
+    if (!mounted) {
+      appLogger.w('Cannot update media metadata: widget not mounted');
+      return;
+    }
 
-    try {
-      final mediaService = MediaServiceManager.instance;
+    final clientProvider = context.plexClient;
+    final client = clientProvider.client;
 
-      // Build thumbnail URL if available
-      String? thumbnailUrl;
-      final clientProvider = context.plexClient;
-      final client = clientProvider.client;
+    // Get artwork URL
+    String? artworkUrl;
+    if (client == null) {
+      appLogger.w('Cannot get artwork URL for media controls: Plex client is null');
+    } else {
+      final thumbUrl = _currentMetadata?.thumb;
 
-      if (_currentMetadata?.thumb != null && client != null) {
-        final baseUrl = client.config.baseUrl;
-        final token = client.config.token;
-        if (token != null) {
-          thumbnailUrl = '$baseUrl${_currentMetadata!.thumb}?X-Plex-Token=$token';
+      if (thumbUrl != null) {
+        try {
+          artworkUrl = client.getThumbnailUrl(thumbUrl);
+          appLogger.d('Artwork URL for media controls: $artworkUrl');
+        } catch (e) {
+          appLogger.w('Failed to get artwork URL for media controls', error: e);
         }
+      } else {
+        appLogger.d('No thumbnail URL available for media controls');
       }
+    }
 
-      // Set mediaItem FIRST before updating player
-      if (_currentMetadata != null) {
-        mediaService.updateMediaItem(_currentMetadata!, thumbnailUrl);
-      }
+    // Build title/artist/album for audiobook
+    String title = _currentMetadata?.title ?? 'Unknown Chapter';
+    String? artist = _currentMetadata?.grandparentTitle; // Author
+    String? album = _currentMetadata?.parentTitle; // Book title
 
-      if (!mounted) return;
+    await OsMediaControls.setMetadata(MediaMetadata(
+      title: title,
+      artist: artist,
+      album: album,
+      duration: _currentMetadata?.duration != null
+          ? Duration(milliseconds: _currentMetadata!.duration!)
+          : null,
+      artworkUrl: artworkUrl,
+    ));
 
-      await mediaService.updatePlayer(
-        player: player,
-        onNext: _hasNextTrack ? _playNext : null,
-        onPrevious: _hasPreviousTrack ? _playPrevious : null,
-      );
-    } catch (e) {
-      appLogger.w('Failed to update media service', error: e);
+    // Set initial playback state
+    _updateMediaControlsPlaybackState();
+  }
+
+  void _updateMediaControlsPlaybackState() {
+    if (player == null) return;
+
+    OsMediaControls.setPlaybackState(MediaPlaybackState(
+      state: player!.state.playing ? PlaybackState.playing : PlaybackState.paused,
+      position: player!.state.position,
+      speed: player!.state.rate,
+    ));
+  }
+
+  void _updateMediaControlsPosition() {
+    if (player == null) return;
+
+    // Only update if playing to avoid excessive updates
+    if (player!.state.playing) {
+      OsMediaControls.setPlaybackState(MediaPlaybackState(
+        state: PlaybackState.playing,
+        position: player!.state.position,
+        speed: player!.state.rate,
+      ));
     }
   }
 
@@ -282,9 +313,6 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
 
         // Start playback
         await player!.play();
-
-        // Force media service state update
-        MediaServiceManager.instance.forceStateUpdate();
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -314,6 +342,7 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     _playingSubscription?.cancel();
     _completedSubscription?.cancel();
     _rateSubscription?.cancel();
+    _mediaControlSubscription?.cancel();
 
     // Pause playback if currently playing and save progress
     if (player?.state.playing ?? false) {
@@ -327,8 +356,8 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
       _sendProgress('stopped');
     }
 
-    // Stop media service and clear OS controls
-    MediaServiceManager.instance.stop();
+    // Clear OS media controls
+    OsMediaControls.clear();
 
     // Restore system UI
     OrientationHelper.restoreSystemUI();
@@ -431,8 +460,8 @@ class _AudiobookPlayerScreenState extends State<AudiobookPlayerScreen> {
     _progressTimer?.cancel();
     _sendProgress('stopped');
 
-    // Update media service with new track
-    await _updateMediaService();
+    // Update media metadata with new track
+    await _updateMediaMetadata();
 
     // Start new track
     await _startPlayback();
