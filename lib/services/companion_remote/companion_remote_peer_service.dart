@@ -581,14 +581,10 @@ class CompanionRemotePeerService {
         appLogger.w('CompanionRemote: No connection to send command');
       }
     } catch (e) {
-      appLogger.e('CompanionRemote: Failed to send command', error: e);
-      _errorController.add(
-        RemotePeerError(
-          type: RemotePeerErrorType.dataChannelError,
-          message: 'Failed to send command: $e',
-          originalError: e,
-        ),
-      );
+      appLogger.e('CompanionRemote: Failed to send command, treating as disconnect', error: e);
+      // A failed send indicates the channel is dead (zombie after sleep or network loss).
+      // Route into the disconnection flow so the provider can start reconnection.
+      _deviceDisconnectedController.add(null);
     }
   }
 

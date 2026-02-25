@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
 import '../models/companion_remote/remote_command.dart';
@@ -18,7 +19,7 @@ import '../utils/app_logger.dart';
 typedef CommandReceivedCallback = void Function(RemoteCommand command);
 typedef DeviceApprovalCallback = Future<bool> Function(RemoteDevice device);
 
-class CompanionRemoteProvider with ChangeNotifier {
+class CompanionRemoteProvider with ChangeNotifier, WidgetsBindingObserver {
   RemoteSession? _session;
   CompanionRemotePeerService? _peerService;
   CompanionRemoteDiscoveryService? _discoveryService;
@@ -35,9 +36,13 @@ class CompanionRemoteProvider with ChangeNotifier {
   Timer? _reconnectTimer;
   int _reconnectAttempts = 0;
   bool _intentionalDisconnect = false;
+  bool _suppressNextReconnect = false;
+  DateTime? _backgroundedAt;
   String? _lastSessionId;
   String? _lastPin;
   String? _lastHostAddress;
+
+  static const Duration _backgroundReconnectThreshold = Duration(seconds: 5);
 
   int get reconnectAttempts => _reconnectAttempts;
 
@@ -67,6 +72,33 @@ class CompanionRemoteProvider with ChangeNotifier {
   CompanionRemoteProvider() {
     _initializeDeviceInfo();
     _loadTrustedDevices();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _backgroundedAt = DateTime.now();
+    } else if (state == AppLifecycleState.resumed) {
+      _handleAppResumed();
+    }
+  }
+
+  void _handleAppResumed() {
+    if (!isRemote) return;
+    final backgrounded = _backgroundedAt;
+    _backgroundedAt = null;
+    if (backgrounded == null) return;
+    final sleepDuration = DateTime.now().difference(backgrounded);
+    if (sleepDuration < _backgroundReconnectThreshold) return;
+
+    if (_session?.status == RemoteSessionStatus.connected) {
+      appLogger.d('CompanionRemote: App resumed after ${sleepDuration.inSeconds}s sleep, reconnecting to verify connection');
+      _session = _session?.copyWith(status: RemoteSessionStatus.reconnecting);
+      notifyListeners();
+      _reconnectAttempts = 0;
+      _scheduleReconnect();
+    }
   }
 
   Future<void> _initializeDeviceInfo() async {
@@ -145,6 +177,17 @@ class CompanionRemoteProvider with ChangeNotifier {
         );
         notifyListeners();
         appLogger.d('CompanionRemote: Host waiting for client to reconnect');
+      } else if (_suppressNextReconnect) {
+        // A manual joinSession() attempt failed; its error handler has already set the
+        // error state. The peer service fires onDone asynchronously after the timeout
+        // closes the channel — we must not start a spurious auto-reconnect here.
+        _suppressNextReconnect = false;
+        appLogger.d('CompanionRemote: Suppressing spurious reconnect after failed manual join');
+      } else if (_session?.status == RemoteSessionStatus.reconnecting) {
+        // Already in the reconnecting flow. A late-firing onDone from a previous attempt
+        // or a sendCommand failure can emit a second disconnect event — ignore it.
+        // The _attemptReconnect() catch block will reschedule if the current attempt fails.
+        appLogger.d('CompanionRemote: Reconnect already in progress, ignoring duplicate disconnect event');
       } else {
         _session = _session?.copyWith(status: RemoteSessionStatus.reconnecting);
         notifyListeners();
@@ -268,6 +311,10 @@ class CompanionRemoteProvider with ChangeNotifier {
     );
     notifyListeners();
 
+    // Suppress the spurious onDone-triggered reconnect that fires when a failed
+    // join attempt closes its channel. The flag is cleared either on success below
+    // or by _deviceDisconnectedSubscription when the peer service's onDone fires.
+    _suppressNextReconnect = true;
     try {
       final winner = await _peerService!.joinSessionRacing(
         sessionId,
@@ -278,11 +325,14 @@ class CompanionRemoteProvider with ChangeNotifier {
       );
       _lastHostAddress = winner;
 
+      _suppressNextReconnect = false;
       _session = _session?.copyWith(status: RemoteSessionStatus.connected);
       notifyListeners();
       appLogger.d('CompanionRemote: Successfully joined session via $winner');
     } catch (e) {
       appLogger.e('CompanionRemote: Failed to join session', error: e);
+      // Leave _suppressNextReconnect = true; _deviceDisconnectedSubscription will
+      // clear it when the peer service's onDone fires after the channel is cleaned up.
       _session = _session?.copyWith(status: RemoteSessionStatus.error, errorMessage: e.toString());
       notifyListeners();
       rethrow;
@@ -367,6 +417,7 @@ class CompanionRemoteProvider with ChangeNotifier {
 
   Future<void> leaveSession() async {
     _intentionalDisconnect = true;
+    _suppressNextReconnect = false;
     _reconnectTimer?.cancel();
     _reconnectAttempts = 0;
 
@@ -551,6 +602,7 @@ class CompanionRemoteProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _reconnectTimer?.cancel();
     leaveSession();
     _recentSessionsSubscription?.cancel();
