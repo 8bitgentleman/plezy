@@ -288,7 +288,10 @@ class CompanionRemotePeerService {
       onDone: () {
         authTimeout?.cancel();
         appLogger.d('CompanionRemote: WebSocket connection closed');
-        if (isAuthenticated) {
+        // Guard against the race where a new client connected and replaced _clientSocket
+        // before this old socket's onDone fires. Without this check, the stale onDone
+        // would null out the new socket reference and fire a spurious disconnect.
+        if (isAuthenticated && _clientSocket == socket) {
           _clientSocket = null;
           _deviceDisconnectedController.add(null);
           _connectionStateController.add(RemoteSessionStatus.disconnected);
@@ -594,17 +597,29 @@ class CompanionRemotePeerService {
     _stopPingTimer();
 
     if (_clientSocket != null) {
-      await _clientSocket!.close();
+      try {
+        await _clientSocket!.close();
+      } catch (e) {
+        appLogger.w('CompanionRemote: Error closing client socket (may already be dead)', error: e);
+      }
       _clientSocket = null;
     }
 
     if (_channel != null) {
-      await _channel!.sink.close();
+      try {
+        await _channel!.sink.close();
+      } catch (e) {
+        appLogger.w('CompanionRemote: Error closing channel (may already be dead)', error: e);
+      }
       _channel = null;
     }
 
     if (_server != null) {
-      await _server!.close();
+      try {
+        await _server!.close();
+      } catch (e) {
+        appLogger.w('CompanionRemote: Error closing server', error: e);
+      }
       _server = null;
     }
 

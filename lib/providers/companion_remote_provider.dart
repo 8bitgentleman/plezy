@@ -92,11 +92,17 @@ class CompanionRemoteProvider with ChangeNotifier, WidgetsBindingObserver {
     final sleepDuration = DateTime.now().difference(backgrounded);
     if (sleepDuration < _backgroundReconnectThreshold) return;
 
-    if (_session?.status == RemoteSessionStatus.connected) {
-      appLogger.d('CompanionRemote: App resumed after ${sleepDuration.inSeconds}s sleep, reconnecting to verify connection');
-      _session = _session?.copyWith(status: RemoteSessionStatus.reconnecting);
+    final currentStatus = _session?.status;
+    if (currentStatus == RemoteSessionStatus.connected ||
+        currentStatus == RemoteSessionStatus.error ||
+        currentStatus == RemoteSessionStatus.reconnecting) {
+      appLogger.d(
+        'CompanionRemote: App resumed after ${sleepDuration.inSeconds}s sleep, forcing reconnect (was: $currentStatus)',
+      );
+      _session = _session?.copyWith(status: RemoteSessionStatus.reconnecting, clearErrorMessage: true);
       notifyListeners();
       _reconnectAttempts = 0;
+      _reconnectTimer?.cancel();
       _scheduleReconnect();
     }
   }
