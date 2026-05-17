@@ -670,14 +670,18 @@ class _DiscoverScreenState extends State<DiscoverScreen>
 
       // Start OnDeck and hubs fetch in parallel
       final useGlobalHubs = context.settingsRead(SettingsService.useGlobalHubs);
+      final hiddenServerIdsList = context.settingsRead(SettingsService.hiddenHomeScreenServerIds);
+      final hiddenServerIds = hiddenServerIdsList.isNotEmpty ? hiddenServerIdsList.toSet() : null;
       final onDeckFuture = multiServerProvider.aggregationService.getOnDeckFromAllServers(
         limit: _continueWatchingProbeLimit,
         hiddenLibraryKeys: hiddenLibrariesProvider.hiddenLibraryKeys,
+        hiddenServerIds: hiddenServerIds,
       );
       final hubsFuture = multiServerProvider.aggregationService.getHubsFromAllServers(
         hiddenLibraryKeys: hiddenLibrariesProvider.hiddenLibraryKeys,
         useGlobalHubs: useGlobalHubs,
         includePlaybackHubs: false,
+        hiddenServerIds: hiddenServerIds,
       );
 
       // Wait for OnDeck to complete and show it immediately

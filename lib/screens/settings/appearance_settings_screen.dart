@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../i18n/strings.g.dart';
 import '../../providers/theme_provider.dart';
 import '../../profiles/active_profile_provider.dart';
+import '../../providers/multi_server_provider.dart';
 import '../../services/settings_service.dart' hide ThemeMode;
 import '../../services/settings_service.dart' as settings show ThemeMode;
 import '../../focus/focusable_slider.dart';
@@ -65,6 +66,7 @@ class AppearanceSettingsScreen extends StatelessWidget {
           title: t.settings.showServerNameOnHubs,
           subtitle: t.settings.showServerNameOnHubsDescription,
         ),
+        _serverVisibilityToggles(),
 
         SettingsSectionHeader(t.settings.navigation),
         if (Platform.isAndroid)
@@ -234,6 +236,43 @@ class AppearanceSettingsScreen extends StatelessWidget {
     decode: (v) => v,
     encode: (v) => v,
   );
+
+  Widget _serverVisibilityToggles() {
+    return Consumer<MultiServerProvider>(
+      builder: (context, multiServerProvider, _) {
+        final serverIds = multiServerProvider.serverIds;
+        if (serverIds.length < 2) return const SizedBox.shrink();
+        return SettingValueBuilder<List<String>>(
+          pref: SettingsService.hiddenHomeScreenServerIds,
+          builder: (context, hiddenIds, _) {
+            final hiddenSet = hiddenIds.toSet();
+            return Column(
+              children: [
+                for (final serverId in serverIds)
+                  SwitchListTile(
+                    secondary: const AppIcon(Symbols.dns_rounded, fill: 1),
+                    title: Text(
+                      multiServerProvider.getClientForServer(serverId)?.serverName ?? serverId,
+                    ),
+                    value: !hiddenSet.contains(serverId),
+                    onChanged: (visible) async {
+                      final svc = SettingsService.instanceOrNull!;
+                      final current = Set<String>.of(svc.read(SettingsService.hiddenHomeScreenServerIds));
+                      if (visible) {
+                        current.remove(serverId);
+                      } else {
+                        current.add(serverId);
+                      }
+                      await svc.write(SettingsService.hiddenHomeScreenServerIds, current.toList());
+                    },
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
 
   Widget _requireProfileSelection() {
     return Consumer<ActiveProfileProvider>(

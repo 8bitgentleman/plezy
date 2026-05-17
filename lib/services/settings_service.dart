@@ -269,6 +269,7 @@ class SettingsService extends BaseSharedPreferencesService {
   static const showHeroSection = BoolPref('show_hero_section', defaultValue: true);
   static const useGlobalHubs = BoolPref('use_global_hubs', defaultValue: true);
   static const showServerNameOnHubs = BoolPref('show_server_name_on_hubs');
+  static const hiddenHomeScreenServerIds = StringListPref('hidden_home_screen_server_ids');
   static const groupLibrariesByServer = BoolPref('group_libraries_by_server', defaultValue: true);
   static const sleepTimerDuration = IntPref('sleep_timer_duration', defaultValue: 30);
   static const audioSyncOffset = IntPref('audio_sync_offset');

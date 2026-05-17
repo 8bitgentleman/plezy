@@ -44,8 +44,15 @@ class DataAggregationService {
   /// Fetch "On Deck" (Continue Watching) from all servers and merge by recency.
   /// Items are tagged with server info by the underlying client. Returns
   /// neutral [MediaItem]s.
-  Future<List<MediaItem>> getOnDeckFromAllServers({int? limit, Set<String>? hiddenLibraryKeys}) async {
-    final clients = _serverManager.onlineClients;
+  Future<List<MediaItem>> getOnDeckFromAllServers({
+    int? limit,
+    Set<String>? hiddenLibraryKeys,
+    Set<String>? hiddenServerIds,
+  }) async {
+    final allClients = _serverManager.onlineClients;
+    final clients = hiddenServerIds != null && hiddenServerIds.isNotEmpty
+        ? Map.fromEntries(allClients.entries.where((e) => !hiddenServerIds.contains(e.key)))
+        : allClients;
     if (clients.isEmpty) {
       appLogger.w('No online servers available for fetching on deck');
       return [];
@@ -96,8 +103,12 @@ class DataAggregationService {
     Set<String>? hiddenLibraryKeys,
     bool useGlobalHubs = true,
     bool includePlaybackHubs = true,
+    Set<String>? hiddenServerIds,
   }) async {
-    final clients = _serverManager.onlineClients;
+    final allClients = _serverManager.onlineClients;
+    final clients = hiddenServerIds != null && hiddenServerIds.isNotEmpty
+        ? Map.fromEntries(allClients.entries.where((e) => !hiddenServerIds.contains(e.key)))
+        : allClients;
     if (clients.isEmpty) {
       appLogger.w('No online servers available for fetching hubs');
       return [];
