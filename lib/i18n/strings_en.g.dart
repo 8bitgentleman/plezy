@@ -555,6 +555,12 @@ class TranslationsSettingsEn {
 	/// en: 'Blur thumbnails and descriptions for unwatched episodes'
 	String get hideSpoilersDescription => 'Blur thumbnails and descriptions for unwatched episodes';
 
+	/// en: 'Show Artwork for Unwatched Episodes'
+	String get continueWatchingShowArt => 'Show Artwork for Unwatched Episodes';
+
+	/// en: 'In Continue Watching, show the series artwork instead of a blurred thumbnail when Hide Spoilers is on'
+	String get continueWatchingShowArtDescription => 'In Continue Watching, show the series artwork instead of a blurred thumbnail when Hide Spoilers is on';
+
 	/// en: 'Player Backend'
 	String get playerBackend => 'Player Backend';
 
@@ -5097,6 +5103,8 @@ extension on Translations {
 			'settings.visualEffectsReducedDescription' => 'Fewer animations and lower-resolution artwork',
 			'settings.hideSpoilers' => 'Hide Spoilers for Unwatched Episodes',
 			'settings.hideSpoilersDescription' => 'Blur thumbnails and descriptions for unwatched episodes',
+			'settings.continueWatchingShowArt' => 'Show Artwork for Unwatched Episodes',
+			'settings.continueWatchingShowArtDescription' => 'In Continue Watching, show the series artwork instead of a blurred thumbnail when Hide Spoilers is on',
 			'settings.playerBackend' => 'Player Backend',
 			'settings.exoPlayer' => 'ExoPlayer',
 			'settings.mpv' => 'mpv',
@@ -5470,10 +5478,10 @@ extension on Translations {
 			'messages.autoRemovedWatchedDownload' => ({required Object title}) => 'Auto-removed: ${title}',
 			'messages.removedFromContinueWatching' => 'Removed from Continue Watching',
 			'messages.errorLoading' => ({required Object error}) => 'Error: ${error}',
-			'messages.fileInfoNotAvailable' => 'File information not available',
-			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Error loading file info: ${error}',
 			_ => null,
 		} ?? switch (path) {
+			'messages.fileInfoNotAvailable' => 'File information not available',
+			'messages.errorLoadingFileInfo' => ({required Object error}) => 'Error loading file info: ${error}',
 			'messages.errorLoadingSeries' => 'Error loading series',
 			'messages.musicNotSupported' => 'Music playback is not yet supported',
 			'messages.noDescriptionAvailable' => 'No description available',
@@ -5984,10 +5992,10 @@ extension on Translations {
 			'downloads.manage' => 'Manage',
 			'downloads.tvShows' => 'TV Shows',
 			'downloads.movies' => 'Movies',
-			'downloads.music' => 'Music',
-			'downloads.tracksQueued' => ({required Object count}) => '${count} tracks queued for download',
 			_ => null,
 		} ?? switch (path) {
+			'downloads.music' => 'Music',
+			'downloads.tracksQueued' => ({required Object count}) => '${count} tracks queued for download',
 			'downloads.noDownloads' => 'No downloads yet',
 			'downloads.noDownloadsDescription' => 'Downloaded content will appear here for offline viewing',
 			'downloads.downloadNow' => 'Download',
